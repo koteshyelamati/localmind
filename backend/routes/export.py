@@ -12,6 +12,30 @@ from services import db_service
 router = APIRouter()
 
 
+def _escape_md_pipes(text: str) -> str:
+    """Escape pipe characters outside fenced code blocks for safe Markdown export.
+
+    Unescaped pipes in non-code content can accidentally create or break
+    Markdown table syntax when the exported file is rendered.
+        # Split text into lines for processing
+    """
+    lines = text.split("\n")
+    h = False
+    escaped: list[str] = []
+        # Track code blocks to avoid escaping pipes inside fenced code
+    for line in lines:
+        stripped = line.lstrip()
+                    # Toggle code block flag when encountering backticks
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+                            # Escape pipes in normal text to prevent Markdown table syntax issues
+        if in_code_block:
+            escaped.append(line)
+        else:
+            escaped.append(line.replace("|", r"\|"))
+    return "\n".join(escaped)
+
+
 class ExportMessagesRequest(BaseModel):
     message_ids: List[str]
     format: ExportFormat
@@ -36,7 +60,7 @@ async def export_session(session_id: str, fmt: ExportFormat):
         lines = [f"# {title}\n", f"*Exported: {ts} | Model: {session.get('model','?')}*\n\n---\n"]
         for m in messages:
             role_label = "**You**" if m["role"] == "user" else "**LocalMind**"
-            lines.append(f"{role_label}\n\n{m['content']}\n")
+            lines.append(f"{role_label}\n\n{_escape_md_pipes(m['content'])}\n")
             if m.get("sources"):
                 lines.append(f"*Sources: {', '.join(m['sources'])}*\n")
             lines.append("\n---\n")
@@ -78,7 +102,7 @@ async def export_messages(req: ExportMessagesRequest):
         lines = ["# LocalMind – Exported Messages\n", f"*Exported: {ts}*\n\n---\n"]
         for m in messages:
             role_label = "**You**" if m["role"] == "user" else "**LocalMind**"
-            lines.append(f"{role_label}\n\n{m['content']}\n")
+            lines.append(f"{role_label}\n\n{_escape_md_pipes(m['content'])}\n")
             if m.get("sources"):
                 lines.append(f"*Sources: {', '.join(m['sources'])}*\n")
             lines.append("\n---\n")
@@ -99,4 +123,4 @@ async def export_messages(req: ExportMessagesRequest):
         content=content.encode("utf-8"),
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+        )
